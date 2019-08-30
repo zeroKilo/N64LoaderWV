@@ -15,17 +15,18 @@
  */
 package n64loaderwv;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 
 import org.python.jline.internal.Log;
 
 import ghidra.app.util.MemoryBlockUtil;
 import ghidra.app.util.Option;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteArrayProvider;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.importer.MemoryConflictHandler;
@@ -39,7 +40,11 @@ import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.Symbol;
+import ghidra.program.model.symbol.SymbolUtilities;
 import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
@@ -53,15 +58,29 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	public Collection<LoadSpec> findSupportedLoadSpecs(ByteProvider provider) throws IOException {
 		List<LoadSpec> loadSpecs = new ArrayList<>();
 		Log.info("N64 Loader: Checking Signature" );
-		byte[] header = provider.readBytes(0, 4);
-		if(header[0] == (byte)0x80 &&
-		   header[1] == (byte)0x37 &&
-		   header[2] == (byte)0x12 &&
-		   header[3] == (byte)0x40)
+		BinaryReader br = new BinaryReader(provider, false);
+		int header = br.readInt(0);
+		boolean valid = false;
+		switch(header)
 		{
-			Log.info( "N64 Loader: Found matching header for big endian" );
-			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("MIPS:BE:32:default", "default"), true));
+			case 0x80371240:
+				Log.info( "N64 Loader: Found matching header for big endian" );
+				valid = true;
+				break;
+			case 0x37804012:
+				Log.info( "N64 Loader: Found matching header for mixed endian" );
+				valid = true;
+				break;
+			case 0x40123780:
+				Log.info( "N64 Loader: Found matching header for little endian" );
+				valid = true;
+				break;
+			default:
+				Log.info(String.format("N64 Loader: Found unknown header 0x%08X", header));
+				break;
 		}
+		if(valid)
+			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("MIPS:BE:32:default", "default"), true));
 		return loadSpecs;
 	}
 
@@ -70,70 +89,124 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 			Program program, MemoryConflictHandler handler, TaskMonitor monitor, MessageLog log)
 			throws CancelledException, IOException {
 			MemoryBlockUtil mbu = new MemoryBlockUtil(program, handler);
-			try
+			Log.info("N64 Loader: Checking Endianess" );
+			BinaryReader br = new BinaryReader(provider, false);
+			int header = br.readInt(0);
+			byte[] buffROM = provider.getInputStream(0).readAllBytes();
+			switch(header)
 			{
-				Log.info("N64 Loader: Loading header");
-				N64Header h = new N64Header(provider.readBytes(0, 0x40));
-				Structure header_struct = N64Header.getDataStructure();
-				Address begin_header = program.getAddressFactory().getDefaultAddressSpace().getAddress(0);
-				Log.info("N64 Loader: Creating header segment");
-				mbu.createInitializedBlock(".header", begin_header, provider.getInputStream(0), 0x40, "The ROM header", "ROM Header", true, false, false, monitor);
-				DataUtilities.createData(program, begin_header, header_struct, -1, false, ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
-				byte[] rom = provider.getInputStream(0x1000).readAllBytes();
-				Address begin_rom = program.getAddressFactory().getDefaultAddressSpace().getAddress(h.loadAddress);
-				Log.info("N64 Loader: Creating rom segment");
-				mbu.createInitializedBlock(".rom", begin_rom, provider.getInputStream(0x1000), rom.length, "ROM content", "ROM content", true, true, true, monitor);
-				//ScanPatterns(rom, h, monitor);
-				Log.info("N64 Loader: Done Loading");
+				case 0x80371240:						
+					break;
+				case 0x37804012:
+					Log.info( "N64 Loader: Fixing mixed endian" );
+					MixedSwap(buffROM);
+					break;
+				case 0x40123780:
+					Log.info( "N64 Loader: Fixing little endian" );
+					LittleSwap(buffROM);
+					break;
 			}
-			catch (Exception e)
-			{
-				Log.info("Error!");
-				e.printStackTrace();
-			}
+			
+			ByteArrayProvider bapROM = new ByteArrayProvider(buffROM);
+			Log.info("N64 Loader: Loading header");
+			N64Header h = new N64Header(buffROM);
+
+			Log.info("N64 Loader: Creating ROM segment");
+			Structure header_struct = N64Header.getDataStructure();
+			MakeBlock(mbu, program, ".rom", "ROM image", 0xB4000000, bapROM.getInputStream(0), (int)bapROM.length(), "100", header_struct, monitor);			
+
+			Log.info("N64 Loader: Creating BOOT segment");
+			MakeBlock(mbu, program, ".boot", "ROM bootloader", 0xA4000040, bapROM.getInputStream(0x40),  0xFC0, "111", null, monitor);
+
+			Log.info("N64 Loader: Creating RAM segment");
+			MakeBlock(mbu, program, ".ram", "RAM content", h.loadAddress, bapROM.getInputStream(0x1000),  buffROM.length - 0x1000, "111", null, monitor);
+			
+			bapROM.close();
+			
+			if((boolean)options.get(0).getValue())
+				ScanPatterns(buffROM, h.loadAddress, (String)options.get(1).getValue(), program, monitor);
+			Log.info("N64 Loader: Done Loading");
 	}
 	
-	public void ScanPatterns(byte[] rom, N64Header h, TaskMonitor monitor)
+	public void MakeBlock(MemoryBlockUtil mbu, Program program, String name, String desc, int address, InputStream s, int size, String flags, Structure struc, TaskMonitor monitor)
+	{
+		try
+		{
+			byte[] bf = flags.getBytes();
+			Address addr = program.getAddressFactory().getDefaultAddressSpace().getAddress(address);
+			mbu.createInitializedBlock(name, addr, s, size, desc, desc, bf[0] == '1', bf[1] == '1', bf[2] == '1', monitor);
+			if(struc != null)
+				DataUtilities.createData(program, addr, struc, -1, false, ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
+		}
+		catch (Exception e) {
+		}
+	}
+	
+	public void MixedSwap(byte[] buff)
+	{
+		for(int i = 0; i < buff.length; i += 4)
+		{
+			Swap(buff, i + 0, i + 1);
+			Swap(buff, i + 2, i + 3);
+		}
+	}
+	
+	public void LittleSwap(byte[] buff)
+	{
+		for(int i = 0; i < buff.length; i += 4)
+		{
+			Swap(buff, i + 0, i + 3);
+			Swap(buff, i + 1, i + 2);
+		}
+	}
+	
+	public void Swap(byte[] buff, int a, int b)
+	{
+		byte t = buff[a];
+		buff[a] = buff[b];
+		buff[b] = t;
+	}
+	
+	public void ScanPatterns(byte[] rom, int loadAddress, String sigPath, Program program, TaskMonitor monitor)
 	{
 		try
 		{
 			Log.info("N64 Loader: Loading patterns");
-			String fileName = "pattern/SDK.pat";			 
-			ClassLoader classLoader = ClassLoader.getSystemClassLoader();			 
-			File file = new File(classLoader.getResource(fileName).getFile());
-			BufferedReader b = new BufferedReader(new FileReader(file));
-			String line = b.readLine();
-			ArrayList<PATLine> patterns = new ArrayList<PATLine>();
-			while(line != null)
+			ArrayList<SigPattern> patterns = new ArrayList<SigPattern>();
+			List<String> lines = Files.readAllLines(Paths.get(sigPath));
+			int maxPatLen = 32;
+			for(String line : lines)
 			{
-				patterns.add(new PATLine(line));
-				line = b.readLine();
-			}
-			b.close();
-			Log.info("N64 Loader: Scanning for patterns");
-			monitor.initialize(100);
-			monitor.setMessage("Scanning for patterns...");
-			for(int i = 0; i < rom.length - 32; i += 16)
+				String[] parts = line.split(" ");
+				if(parts.length != 2)
+					continue;
+				SigPattern pat = new SigPattern(parts[0], parts[1]);
+				if(pat.pattern.length > maxPatLen)
+					maxPatLen = pat.pattern.length;
+				patterns.add(pat);
+			}			
+			Log.info("N64 Loader: Scanning for patterns (" + patterns.size() + ")...");
+			monitor.initialize(rom.length - maxPatLen);
+			monitor.setMessage("Scanning for patterns (" + patterns.size() + ")...");
+			for(int i = 0; i < rom.length - maxPatLen; i += 4)
 			{				
 				if((i % 0x1000) == 0)
-				{
-					monitor.setProgress(((i * 100) / rom.length));
-					monitor.checkCanceled();
-				}
+					monitor.setProgress(i);
 				for(int j = 0; j < patterns.size(); j++)
 				{
-					PATLine pline = patterns.get(j);
-					if(pline.Match(rom, i))
+					SigPattern sig = patterns.get(j);
+					if(sig.Match(rom, i))
 					{
-						Log.info("N64 Loader: Found Symbol at " + String.format("0x%08X",h.loadAddress + i) + " Name=" + pline.symbol);
+						int address = loadAddress + i - 0x1000;
+						Log.info("N64 Loader: Found Symbol at " + String.format("0x%08X", address) + " Name=" + sig.name);
+						Address addr = program.getAddressFactory().getDefaultAddressSpace().getAddress(address);
+						SymbolUtilities.createPreferredLabelOrFunctionSymbol(program, addr, null, sig.name, SourceType.ANALYSIS);
+						break;
 					}
 				}
 			}
-			
-		}
-		catch(Exception e)
+		} catch (Exception e) 
 		{
-			Log.info("Error!");
 			e.printStackTrace();
 		}
 	}
@@ -141,8 +214,9 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	@Override
 	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
 			DomainObject domainObject, boolean isLoadIntoProgram) {
-		List<Option> list =
-			super.getDefaultOptions(provider, loadSpec, domainObject, isLoadIntoProgram);
+		List<Option> list = new ArrayList<Option>();
+		list.add(new Option("Signature scan for SDK functions", false));
+		list.add(new Option("Signature file", ""));
 		return list;
 	}
 
