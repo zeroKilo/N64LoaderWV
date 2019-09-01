@@ -15,7 +15,6 @@
  */
 package n64loaderwv;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -24,25 +23,26 @@ import java.util.*;
 
 import org.python.jline.internal.Log;
 
-import ghidra.app.util.MemoryBlockUtil;
+import ghidra.app.util.MemoryBlockUtils;
 import ghidra.app.util.Option;
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteArrayProvider;
 import ghidra.app.util.bin.ByteProvider;
-import ghidra.app.util.importer.MemoryConflictHandler;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.opinion.AbstractLibrarySupportLoader;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.framework.model.DomainObject;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.data.DataUtilities;
 import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.SourceType;
-import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolUtilities;
+import ghidra.program.model.util.CodeUnitInsertionException;
+import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
@@ -86,9 +86,8 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 
 	@Override
 	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
-			Program program, MemoryConflictHandler handler, TaskMonitor monitor, MessageLog log)
+			Program program, TaskMonitor monitor, MessageLog log)
 			throws CancelledException, IOException {
-			MemoryBlockUtil mbu = new MemoryBlockUtil(program, handler);
 			Log.info("N64 Loader: Checking Endianess" );
 			BinaryReader br = new BinaryReader(provider, false);
 			int header = br.readInt(0);
@@ -113,13 +112,13 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 
 			Log.info("N64 Loader: Creating ROM segment");
 			Structure header_struct = N64Header.getDataStructure();
-			MakeBlock(mbu, program, ".rom", "ROM image", 0xB4000000, bapROM.getInputStream(0), (int)bapROM.length(), "100", header_struct, monitor);			
+			MakeBlock(program, ".rom", "ROM image", 0xB4000000, bapROM.getInputStream(0), (int)bapROM.length(), "100", header_struct, log, monitor);			
 
 			Log.info("N64 Loader: Creating BOOT segment");
-			MakeBlock(mbu, program, ".boot", "ROM bootloader", 0xA4000040, bapROM.getInputStream(0x40),  0xFC0, "111", null, monitor);
+			MakeBlock(program, ".boot", "ROM bootloader", 0xA4000040, bapROM.getInputStream(0x40),  0xFC0, "111", null, log, monitor);
 
 			Log.info("N64 Loader: Creating RAM segment");
-			MakeBlock(mbu, program, ".ram", "RAM content", h.loadAddress, bapROM.getInputStream(0x1000),  buffROM.length - 0x1000, "111", null, monitor);
+			MakeBlock(program, ".ram", "RAM content", h.loadAddress, bapROM.getInputStream(0x1000),  buffROM.length - 0x1000, "111", null, log, monitor);
 			
 			bapROM.close();
 			
@@ -128,17 +127,18 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 			Log.info("N64 Loader: Done Loading");
 	}
 	
-	public void MakeBlock(MemoryBlockUtil mbu, Program program, String name, String desc, int address, InputStream s, int size, String flags, Structure struc, TaskMonitor monitor)
+	public void MakeBlock(Program program, String name, String desc, int address, InputStream s, int size, String flags, Structure struc, MessageLog log, TaskMonitor monitor)
 	{
 		try
 		{
 			byte[] bf = flags.getBytes();
 			Address addr = program.getAddressFactory().getDefaultAddressSpace().getAddress(address);
-			mbu.createInitializedBlock(name, addr, s, size, desc, desc, bf[0] == '1', bf[1] == '1', bf[2] == '1', monitor);
+			MemoryBlockUtils.createInitializedBlock(program, true, name, addr, s, size, desc, null, bf[0] == '1', bf[1] == '1', bf[2] == '1', log, monitor);
 			if(struc != null)
 				DataUtilities.createData(program, addr, struc, -1, false, ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
 		}
-		catch (Exception e) {
+		catch (AddressOverflowException | CodeUnitInsertionException e) {
+			Msg.error(this, e);
 		}
 	}
 	
@@ -205,9 +205,9 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 					}
 				}
 			}
-		} catch (Exception e) 
+		} catch (IOException | InvalidInputException e) 
 		{
-			e.printStackTrace();
+			Msg.error(this, e);
 		}
 	}
 
@@ -221,7 +221,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	}
 
 	@Override
-	public String validateOptions(ByteProvider provider, LoadSpec loadSpec, List<Option> options) {
-		return super.validateOptions(provider, loadSpec, options);
+	public String validateOptions(ByteProvider provider, LoadSpec loadSpec, List<Option> options, Program program) {
+		return super.validateOptions(provider, loadSpec, options, program);
 	}
 }

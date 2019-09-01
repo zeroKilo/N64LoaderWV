@@ -2,13 +2,12 @@ package n64loaderwv;
 
 import java.io.IOException;
 
-import org.python.jline.internal.Log;
-
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteArrayProvider;
 import ghidra.app.util.bin.StructConverter;
 import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.StructureDataType;
+import ghidra.util.Msg;
 
 public class N64Header {
 	public byte[] raw;
@@ -28,8 +27,7 @@ public class N64Header {
 			gameCode = b.readFixedLenAsciiString(0x3B, 0x4);
 			maskRomVersion = b.readByte(0x3F);
 		} catch (IOException e) {
-			Log.info("Error :");
-			e.printStackTrace();
+			Msg.error(this, e);
 		}
 	}
 	
