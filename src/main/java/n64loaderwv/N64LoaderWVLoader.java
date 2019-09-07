@@ -86,7 +86,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	}
 
 	public void MakeBlock(Program program, String name, String desc, int address, InputStream s, int size,
-						  String flags, Structure struc, MessageLog log, TaskMonitor monitor,
+						  String flags, Structure struc, TaskMonitor monitor,
 						  MemoryBlockUtil memoryBlockUtil) {
 		try {
 			byte[] bf = flags.getBytes();
@@ -191,15 +191,15 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 		Log.info("N64 Loader: Creating ROM segment");
 		Structure header_struct = N64Header.getDataStructure();
 		MakeBlock(program, ".rom", "ROM image", 0xB4000000, bapROM.getInputStream(0), (int) bapROM.length(), "100",
-				header_struct, log, monitor, memoryBlockUtil);
+				header_struct, monitor, memoryBlockUtil);
 
 		Log.info("N64 Loader: Creating BOOT segment");
 		MakeBlock(program, ".boot", "ROM bootloader", 0xA4000040, bapROM.getInputStream(0x40), 0xFC0, "111", null,
-				log, monitor, memoryBlockUtil);
+				monitor, memoryBlockUtil);
 
 		Log.info("N64 Loader: Creating RAM segment");
 		MakeBlock(program, ".ram", "RAM content", h.loadAddress, bapROM.getInputStream(0x1000),
-				buffROM.length - 0x1000, "111", null, log, monitor, memoryBlockUtil);
+				buffROM.length - 0x1000, "111", null, monitor, memoryBlockUtil);
 
 		bapROM.close();
 
