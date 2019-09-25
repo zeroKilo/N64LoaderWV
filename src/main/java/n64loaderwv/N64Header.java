@@ -12,7 +12,7 @@ import ghidra.util.Msg;
 public class N64Header {
 	public byte[] raw;
 	public int magic;
-	public int loadAddress;
+	public long loadAddress;
 	public String title;
 	public String gameCode;
 	public byte maskRomVersion;
@@ -22,7 +22,7 @@ public class N64Header {
 		BinaryReader b = new BinaryReader(new ByteArrayProvider(data), false);
 		try {
 			magic = b.readInt(0);
-			loadAddress = b.readInt(8);
+			loadAddress = b.readInt(8) & 0xFFFFFFFFL;
 			title = b.readFixedLenAsciiString(0x20, 0x14);
 			gameCode = b.readFixedLenAsciiString(0x3B, 0x4);
 			maskRomVersion = b.readByte(0x3F);

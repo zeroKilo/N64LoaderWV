@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.python.jline.internal.Log;
 
 import ghidra.app.util.MemoryBlockUtils;
@@ -33,15 +34,14 @@ import ghidra.app.util.opinion.AbstractLibrarySupportLoader;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.framework.model.DomainObject;
 import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.data.DataUtilities;
 import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.SymbolUtilities;
-import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.InvalidInputException;
@@ -49,6 +49,8 @@ import ghidra.util.task.TaskMonitor;
 
 public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 
+	ArrayList<MemoryBlock> blocks = new ArrayList<MemoryBlock>();
+	
 	@Override
 	public String getName() {
 		return "N64 Loader by Warranty Voider";
@@ -105,7 +107,8 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 					LittleSwap(buffROM);
 					break;
 			}
-			
+
+			ByteArrayProvider bapStack = new ByteArrayProvider(new byte[0x1000]);
 			ByteArrayProvider bapROM = new ByteArrayProvider(buffROM);
 			Log.info("N64 Loader: Loading header");
 			N64Header h = new N64Header(buffROM);
@@ -113,6 +116,12 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 			Log.info("N64 Loader: Creating ROM segment");
 			Structure header_struct = N64Header.getDataStructure();
 			MakeBlock(program, ".rom", "ROM image", 0xB4000000, bapROM.getInputStream(0), (int)bapROM.length(), "100", header_struct, log, monitor);			
+			
+			Log.info("N64 Loader: Creating Stack Data segment");
+			MakeBlock(program, ".spdata", "Stack Data", 0x04000000, bapStack.getInputStream(0), 0x1000, "110", null, log, monitor);
+			
+			Log.info("N64 Loader: Creating Stack Code segment");
+			MakeBlock(program, ".spcode", "Stack Code", 0x04001000, bapStack.getInputStream(0), 0x1000, "111", null, log, monitor);
 
 			Log.info("N64 Loader: Creating BOOT segment");
 			MakeBlock(program, ".boot", "ROM bootloader", 0xA4000040, bapROM.getInputStream(0x40),  0xFC0, "111", null, log, monitor);
@@ -121,24 +130,26 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 			MakeBlock(program, ".ram", "RAM content", h.loadAddress, bapROM.getInputStream(0x1000),  buffROM.length - 0x1000, "111", null, log, monitor);
 			
 			bapROM.close();
+			bapStack.close();
 			
-			if((boolean)options.get(0).getValue())
-				ScanPatterns(buffROM, h.loadAddress, (String)options.get(1).getValue(), program, monitor);
+			if(!((String)options.get(0).getValue()).isEmpty())
+				ScanPatterns(buffROM, h.loadAddress, (String)options.get(0).getValue(), program, monitor);
 			Log.info("N64 Loader: Done Loading");
 	}
 	
-	public void MakeBlock(Program program, String name, String desc, int address, InputStream s, int size, String flags, Structure struc, MessageLog log, TaskMonitor monitor)
+	public void MakeBlock(Program program, String name, String desc, long address, InputStream s, int size, String flags, Structure struc, MessageLog log, TaskMonitor monitor)
 	{
 		try
 		{
 			byte[] bf = flags.getBytes();
 			Address addr = program.getAddressFactory().getDefaultAddressSpace().getAddress(address);
-			MemoryBlockUtils.createInitializedBlock(program, true, name, addr, s, size, desc, null, bf[0] == '1', bf[1] == '1', bf[2] == '1', log, monitor);
+			MemoryBlock block = MemoryBlockUtils.createInitializedBlock(program, true, name, addr, s, size, desc, null, bf[0] == '1', bf[1] == '1', bf[2] == '1', log, monitor);
+			blocks.add(block);
 			if(struc != null)
-				DataUtilities.createData(program, addr, struc, -1, false, ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
+				DataUtilities.createData(program, block.getStart(), struc, -1, false, ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
 		}
-		catch (AddressOverflowException | CodeUnitInsertionException e) {
-			Msg.error(this, e);
+		catch (Exception e) {
+			Msg.error(this, ExceptionUtils.getStackTrace(e));
 		}
 	}
 	
@@ -167,7 +178,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 		buff[b] = t;
 	}
 	
-	public void ScanPatterns(byte[] rom, int loadAddress, String sigPath, Program program, TaskMonitor monitor)
+	public void ScanPatterns(byte[] rom, long loadAddress, String sigPath, Program program, TaskMonitor monitor)
 	{
 		try
 		{
@@ -197,10 +208,13 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 					SigPattern sig = patterns.get(j);
 					if(sig.Match(rom, i))
 					{
-						int address = loadAddress + i - 0x1000;
-						Log.info("N64 Loader: Found Symbol at " + String.format("0x%08X", address) + " Name=" + sig.name);
-						Address addr = program.getAddressFactory().getDefaultAddressSpace().getAddress(address);
-						SymbolUtilities.createPreferredLabelOrFunctionSymbol(program, addr, null, sig.name, SourceType.ANALYSIS);
+						long address = loadAddress + i - 0x1000;
+						Address addr = MakeAddress(address);                       
+						if(addr != null)
+						{
+						    SymbolUtilities.createPreferredLabelOrFunctionSymbol(program, addr, null, sig.name, SourceType.ANALYSIS);
+						    Log.info("N64 Loader: Found Symbol at " + String.format("0x%08X", address) + " Name=" + sig.name);
+						}
 						break;
 					}
 				}
@@ -210,12 +224,25 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 			Msg.error(this, e);
 		}
 	}
+	
+	public Address MakeAddress(long address)
+	{
+	    for(MemoryBlock block : blocks)
+	    {
+	        if(address >= block.getStart().getAddressableWordOffset() &&
+	           address <= block.getEnd().getAddressableWordOffset())
+	        {
+	            Address addr = block.getStart();
+	            return addr.add(address - addr.getAddressableWordOffset());            
+	        }
+	    }
+	    return null;
+	}
 
 	@Override
 	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
 			DomainObject domainObject, boolean isLoadIntoProgram) {
 		List<Option> list = new ArrayList<Option>();
-		list.add(new Option("Signature scan for SDK functions", false));
 		list.add(new Option("Signature file", ""));
 		return list;
 	}
