@@ -138,7 +138,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 				DataUtilities.createData(program, addr, struc, -1, false, ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
 		}
 		catch (AddressOverflowException | CodeUnitInsertionException e) {
-			Msg.error(this, e);
+			Msg.trace(this, e);
 		}
 	}
 	
@@ -207,7 +207,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 			}
 		} catch (IOException | InvalidInputException e) 
 		{
-			Msg.error(this, e);
+			Msg.trace(this, e);
 		}
 	}
 
