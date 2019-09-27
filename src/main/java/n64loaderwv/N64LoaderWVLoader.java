@@ -49,7 +49,40 @@ import ghidra.util.task.TaskMonitor;
 
 public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 
+	class BlockInfo
+	{
+		long start, end;
+		String desc, name;
+		BlockInfo(long s, long e, String n, String d)
+		{
+			start = s;
+			end = e;
+			desc = d;
+			name = n;
+		}
+	}
+	
 	ArrayList<MemoryBlock> blocks = new ArrayList<MemoryBlock>();
+	ArrayList<BlockInfo> initSections = new ArrayList<N64LoaderWVLoader.BlockInfo>()
+	{
+		{
+			add(new BlockInfo(0x00000000, 0x03EFFFFF, "RDRAM Memory",".rdram"));
+			add(new BlockInfo(0x03F00000, 0x03FFFFFF, "RDRAM Registers",".rdreg"));
+			add(new BlockInfo(0x04000000, 0x040FFFFF, "SP Registers",".spreg"));
+			add(new BlockInfo(0x04100000, 0x041FFFFF, "DP Command Registers",".dpcreg"));
+			add(new BlockInfo(0x04200000, 0x042FFFFF, "DP Span Registers",".dpsreg"));
+			add(new BlockInfo(0x04300000, 0x043FFFFF, "MIPS Interface (MI) Registers",".mireg"));
+			add(new BlockInfo(0x04400000, 0x044FFFFF, "Video Interface (VI) Registers",".vireg"));
+			add(new BlockInfo(0x04500000, 0x045FFFFF, "Audio Interface (AI) Registers",".aireg"));
+			add(new BlockInfo(0x04600000, 0x046FFFFF, "Peripheral Interface (PI) Registers",".pireg"));
+			add(new BlockInfo(0x04700000, 0x047FFFFF, "RDRAM Interface (RI) Registers",".rireg"));
+			add(new BlockInfo(0x04800000, 0x048FFFFF, "Serial Interface (SI) Registers",".sireg"));
+			add(new BlockInfo(0x1FC00000, 0x1FC007BF, "PIF Boot ROM",".pifrom"));
+			add(new BlockInfo(0x1FC007C0, 0x1FC007FF, "PIF RAM",".pifram"));
+			add(new BlockInfo(0x80000000, 0x800003FF, "Interrupt Vector Table",".ivt"));
+		}
+	};
+	
 	
 	@Override
 	public String getName() {
@@ -108,32 +141,63 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 					break;
 			}
 
-			ByteArrayProvider bapStack = new ByteArrayProvider(new byte[0x1000]);
 			ByteArrayProvider bapROM = new ByteArrayProvider(buffROM);
 			Log.info("N64 Loader: Loading header");
 			N64Header h = new N64Header(buffROM);
+			
+			for(BlockInfo bli : initSections)
+			{
+				long size = (bli.end + 1) - bli.start;
+				monitor.setMessage("N64 Loader: Creating segment " + bli.name);
+				Log.info("N64 Loader: Creating segment " + bli.name);
+				ByteArrayProvider bapBlock = new ByteArrayProvider(new byte[(int)size]);
+				if(bli.desc.equals(".pifrom"))
+				{
+					byte[] data = this.getClass().getClassLoader().getResourceAsStream("pifdata.bin").readAllBytes();
+					bapBlock.close();
+					bapBlock = new ByteArrayProvider(data);
+				}
+				MakeBlock(program, bli.desc, bli.name, bli.start, bapBlock.getInputStream(0), (int)size, "111", null, log, monitor);
+				bapBlock.close();
+			}
 
-			Log.info("N64 Loader: Creating ROM segment");
+			Log.info("N64 Loader: Creating segment ROM");
 			Structure header_struct = N64Header.getDataStructure();
-			MakeBlock(program, ".rom", "ROM image", 0xB4000000, bapROM.getInputStream(0), (int)bapROM.length(), "100", header_struct, log, monitor);			
-			
-			Log.info("N64 Loader: Creating Stack Data segment");
-			MakeBlock(program, ".spdata", "Stack Data", 0x04000000, bapStack.getInputStream(0), 0x1000, "110", null, log, monitor);
-			
-			Log.info("N64 Loader: Creating Stack Code segment");
-			MakeBlock(program, ".spcode", "Stack Code", 0x04001000, bapStack.getInputStream(0), 0x1000, "111", null, log, monitor);
+			MakeBlock(program, ".rom", "ROM image", 0xB4000000, bapROM.getInputStream(0), (int)bapROM.length(), "101", header_struct, log, monitor);
 
-			Log.info("N64 Loader: Creating BOOT segment");
+			Log.info("N64 Loader: Creating segment BOOT");
 			MakeBlock(program, ".boot", "ROM bootloader", 0xA4000040, bapROM.getInputStream(0x40),  0xFC0, "111", null, log, monitor);
 
-			Log.info("N64 Loader: Creating RAM segment");
+			Log.info("N64 Loader: Creating segment RAM");
 			MakeBlock(program, ".ram", "RAM content", h.loadAddress, bapROM.getInputStream(0x1000),  buffROM.length - 0x1000, "111", null, log, monitor);
 			
 			bapROM.close();
-			bapStack.close();
 			
 			if(!((String)options.get(0).getValue()).isEmpty())
 				ScanPatterns(buffROM, h.loadAddress, (String)options.get(0).getValue(), program, monitor);
+			
+			try
+			{
+				Address addr = MakeAddress(0x1FC00000L);
+				if(addr != null)
+				{
+					program.getSymbolTable().addExternalEntryPoint(addr);
+				    program.getSymbolTable().createLabel(addr, "pifMain", SourceType.ANALYSIS);
+				}
+				addr = MakeAddress(0xA4000040L);
+				if(addr != null)
+				{
+					program.getSymbolTable().addExternalEntryPoint(addr);
+				    program.getSymbolTable().createLabel(addr, "bootMain", SourceType.ANALYSIS);
+				}
+				addr = MakeAddress(h.loadAddress);
+				if(addr != null)
+				{
+					program.getSymbolTable().addExternalEntryPoint(addr);
+				    program.getSymbolTable().createLabel(addr, "romMain", SourceType.ANALYSIS);
+				}
+			}catch(Exception ex) {};
+			
 			Log.info("N64 Loader: Done Loading");
 	}
 	
@@ -143,7 +207,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 		{
 			byte[] bf = flags.getBytes();
 			Address addr = program.getAddressFactory().getDefaultAddressSpace().getAddress(address);
-			MemoryBlock block = MemoryBlockUtils.createInitializedBlock(program, true, name, addr, s, size, desc, null, bf[0] == '1', bf[1] == '1', bf[2] == '1', log, monitor);
+			MemoryBlock block = MemoryBlockUtils.createInitializedBlock(program, false, name, addr, s, size, desc, null, bf[0] == '1', bf[1] == '1', bf[2] == '1', log, monitor);
 			blocks.add(block);
 			if(struc != null)
 				DataUtilities.createData(program, block.getStart(), struc, -1, false, ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
@@ -151,6 +215,20 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 		catch (Exception e) {
 			Msg.error(this, ExceptionUtils.getStackTrace(e));
 		}
+	}
+	
+	public Address MakeAddress(long address)
+	{
+	    for(MemoryBlock block : blocks)
+	    {
+	        if(address >= block.getStart().getAddressableWordOffset() &&
+	           address <= block.getEnd().getAddressableWordOffset())
+	        {
+	            Address addr = block.getStart();
+	            return addr.add(address - addr.getAddressableWordOffset());            
+	        }
+	    }
+	    return null;
 	}
 	
 	public void MixedSwap(byte[] buff)
@@ -223,20 +301,6 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 		{
 			Msg.error(this, e);
 		}
-	}
-	
-	public Address MakeAddress(long address)
-	{
-	    for(MemoryBlock block : blocks)
-	    {
-	        if(address >= block.getStart().getAddressableWordOffset() &&
-	           address <= block.getEnd().getAddressableWordOffset())
-	        {
-	            Address addr = block.getStart();
-	            return addr.add(address - addr.getAddressableWordOffset());            
-	        }
-	    }
-	    return null;
 	}
 
 	@Override
