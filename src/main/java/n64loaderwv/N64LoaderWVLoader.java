@@ -196,7 +196,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 					program.getSymbolTable().addExternalEntryPoint(addr);
 				    program.getSymbolTable().createLabel(addr, "romMain", SourceType.ANALYSIS);
 				}
-			}catch(Exception ex) {};
+			}catch(Exception ex) {}
 			
 			Log.info("N64 Loader: Done Loading");
 	}
