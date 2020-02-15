@@ -7,6 +7,8 @@ this is a loader module for ghidra for N64 roms (.z64, .n64, .v64)
 
 this allows a rom to be labeled, disassembled and decompiled
 
+requires JDK 13
+
 [![Alt text](https://img.youtube.com/vi/3d3a39LuCwc/0.jpg)](https://www.youtube.com/watch?v=3d3a39LuCwc)
 
 [![Alt text](https://img.youtube.com/vi/fhI3Vpw7FVk/0.jpg)](https://www.youtube.com/watch?v=fhI3Vpw7FVk)
