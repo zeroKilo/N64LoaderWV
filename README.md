@@ -1,5 +1,7 @@
 # N64 ROM Loader for Ghidra by Warranty Voider
 
+**Needs Java 13**
+
 this is a loader module for ghidra for N64 roms (.z64, .n64, .v64)
 - fixes endianess (little, big, mixed) at loading
 - loads ram, rom and boot section into ghidra
