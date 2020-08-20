@@ -35,18 +35,20 @@ public class N64Header {
 	{
 		Structure header_struct = new StructureDataType("Internal_Header", 0);		
 		header_struct.add(StructConverter.DWORD,  0x04, "Magic", null);
-		header_struct.add(StructConverter.DWORD,  0x04, "Unknown 1", null);
+		header_struct.add(StructConverter.DWORD,  0x04, "Clock Rate", null);
 		header_struct.add(StructConverter.DWORD,  0x04, "Load Address", null);
-		header_struct.add(StructConverter.DWORD,  0x04, "Unknown 2", null);
-		header_struct.add(StructConverter.DWORD,  0x04, "Unknown 3", null);
-		header_struct.add(StructConverter.DWORD,  0x04, "Unknown 4", null);
+		header_struct.add(StructConverter.DWORD,  0x04, "Release Offset", null);
+		header_struct.add(StructConverter.DWORD,  0x04, "CRC1", null);
+		header_struct.add(StructConverter.DWORD,  0x04, "CRC2", null);
 		header_struct.add(StructConverter.DWORD,  0x04, "Unknown 5", null);
 		header_struct.add(StructConverter.DWORD,  0x04, "Unknown 6", null);
 		header_struct.add(StructConverter.STRING, 0x14, "Game Title", null);
 		header_struct.add(StructConverter.DWORD,  0x04, "Zeroed", null);
 		header_struct.add(StructConverter.WORD,   0x02, "Zeroed", null);
 		header_struct.add(StructConverter.BYTE,   0x01, "Zeroed", null);
-		header_struct.add(StructConverter.STRING, 0x04, "Game Code", null);
+		header_struct.add(StructConverter.BYTE,   0x01, "Media Type", null);
+		header_struct.add(StructConverter.STRING, 0x02, "Game Code", null);
+		header_struct.add(StructConverter.BYTE,   0x01, "Region", null);
 		header_struct.add(StructConverter.BYTE,   0x01, "Mask ROM Version", null);
 		return header_struct;
 	}
