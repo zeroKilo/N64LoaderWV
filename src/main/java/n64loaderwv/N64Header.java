@@ -24,7 +24,7 @@ public class N64Header {
 			magic = b.readInt(0);
 			loadAddress = b.readInt(8) & 0xFFFFFFFFL;
 			title = b.readFixedLenAsciiString(0x20, 0x14);
-			gameCode = b.readFixedLenAsciiString(0x3B, 0x4);
+			gameCode = b.readFixedLenAsciiString(0x3c, 0x2);
 			maskRomVersion = b.readByte(0x3F);
 		} catch (IOException e) {
 			Msg.error(this, e);
