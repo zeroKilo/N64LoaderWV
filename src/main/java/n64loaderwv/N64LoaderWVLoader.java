@@ -271,8 +271,8 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 				program.getSymbolTable().createLabel(MakeAddress(0xA470001CL), "RI_WERROR", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0xA4800000L), "SI_DRAM_ADDR", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0xA4800004L), "SI_PIF_ADDR_RD64B_REG", SourceType.ANALYSIS);
-				program.getSymbolTable().createLabel(MakeAddress(0xA4800008L), "SI_PIF_ADDR_WR64B_REG", SourceType.ANALYSIS);
-				program.getSymbolTable().createLabel(MakeAddress(0xA480000CL), "SI_STATUS", SourceType.ANALYSIS);
+				program.getSymbolTable().createLabel(MakeAddress(0xA4800010L), "SI_PIF_ADDR_WR64B_REG", SourceType.ANALYSIS);
+				program.getSymbolTable().createLabel(MakeAddress(0xA4800018L), "SI_STATUS", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0x80000300L), "NTSC_PAL", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0x80000304L), "CART_DD", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0x80000308L), "ROM_BASE", SourceType.ANALYSIS);
