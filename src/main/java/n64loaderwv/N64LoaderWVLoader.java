@@ -215,7 +215,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 				program.getSymbolTable().createLabel(MakeAddress(0xA4040014L), "SP_DMA_FULL", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0xA4040018L), "SP_DMA_BUSY", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0xA404001CL), "SP_SEMAPHORE", SourceType.ANALYSIS);
-				program.getSymbolTable().createLabel(MakeAddress(0xA408000CL), "SP_PC", SourceType.ANALYSIS);
+				program.getSymbolTable().createLabel(MakeAddress(0xA4080000L), "SP_PC", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0xA4100000L), "DCP_START", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0xA4100004L), "DCP_END", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0xA4100008L), "DCP_CURRENT", SourceType.ANALYSIS);
