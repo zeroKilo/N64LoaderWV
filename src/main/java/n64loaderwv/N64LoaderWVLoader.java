@@ -164,7 +164,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 
 			Log.info("N64 Loader: Creating segment ROM");
 			Structure header_struct = N64Header.getDataStructure();
-			MakeBlock(program, ".rom", "ROM image", 0xB0000000, bapROM.getInputStream(0), (int)bapROM.length(), "101", header_struct, log, monitor);
+			MakeBlock(program, ".rom", "ROM image", 0xB0000000, bapROM.getInputStream(0), (int)bapROM.length(), "100", header_struct, log, monitor);
 
 			Log.info("N64 Loader: Creating segment BOOT");
 			MakeBlock(program, ".boot", "ROM bootloader", 0xA4000040, bapROM.getInputStream(0x40),  0xFC0, "111", null, log, monitor);
