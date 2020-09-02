@@ -116,7 +116,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 				break;
 		}
 		if(valid)
-			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("MIPS:BE:32:default", "default"), true));
+			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("MIPS:BE:64:64-32addr", "default"), true));
 		return loadSpecs;
 	}
 
@@ -273,6 +273,11 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 				program.getSymbolTable().createLabel(MakeAddress(0xA4800004L), "SI_PIF_ADDR_RD64B_REG", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0xA4800010L), "SI_PIF_ADDR_WR64B_REG", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0xA4800018L), "SI_STATUS", SourceType.ANALYSIS);
+				program.getSymbolTable().createLabel(MakeAddress(0x80000000L), "TLB_REFILL", SourceType.ANALYSIS);
+				program.getSymbolTable().createLabel(MakeAddress(0x80000000L), "TLB_REFILL", SourceType.ANALYSIS);
+				program.getSymbolTable().createLabel(MakeAddress(0x80000080L), "XTLB_REFILL", SourceType.ANALYSIS);
+				program.getSymbolTable().createLabel(MakeAddress(0x80000100L), "CACHE_ERROR", SourceType.ANALYSIS);
+				program.getSymbolTable().createLabel(MakeAddress(0x80000180L), "GEN_EXCEPTION", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0x80000300L), "NTSC_PAL", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0x80000304L), "CART_DD", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0x80000308L), "ROM_BASE", SourceType.ANALYSIS);
