@@ -116,7 +116,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 				break;
 		}
 		if(valid)
-			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("MIPS:BE:64:64-32addr", "default"), true));
+			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("MIPS:BE:64:64-32addr:default", "default"), true));
 		return loadSpecs;
 	}
 
