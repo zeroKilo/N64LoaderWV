@@ -36,7 +36,7 @@ and it will create a zip file in `/dist` that you can use that file as the exten
 
 install java13, gradle, and ghidra, on arch linux (substitute as needed for apt, yum, or what have you):
 
-```pacman -S jdk13-openjdk gradle ghidra```
+```pacman -S jdk15-openjdk gradle ghidra```
 
 Clone the repo and cd to the N64LoaderWV directory
 
