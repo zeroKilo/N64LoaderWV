@@ -3,7 +3,8 @@
 this is a loader module for ghidra for N64 roms (.z64, .n64, .v64)
 - fixes endianess (little, big, mixed) at loading
 - loads ram, rom and boot section into ghidra
-- it can use a signature/pattern file to scan for symbol hints for ghidra
+- it can use a pattern file to scan for symbol hints
+- it can load symbol files from N64sym
 
 this allows a rom to be labeled, disassembled and decompiled
 

@@ -176,8 +176,25 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 			bapROM.close();
 			
 			if(!((String)options.get(0).getValue()).isEmpty())
-				ScanPatterns(buffROM, h.loadAddress, (String)options.get(0).getValue(), program, monitor);
-			
+			{
+				String filePath =  (String)options.get(0).getValue();
+				boolean done = false;
+				try
+				{
+					ScanPatterns(buffROM, h.loadAddress, filePath, program, monitor);
+					done = true;
+				}
+				catch (Exception ex) {}
+				if(!done)
+				{
+					try
+					{
+						ApplyN64sym(buffROM, h.loadAddress, filePath, program, monitor);
+						done = true;
+					}
+					catch (Exception ex) {}					
+				}
+			}
 			try
 			{
 				Address addr = MakeAddress(0x1FC00000L);
@@ -365,50 +382,63 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 		buff[b] = t;
 	}
 	
-	public void ScanPatterns(byte[] rom, long loadAddress, String sigPath, Program program, TaskMonitor monitor)
+	public void ApplyN64sym(byte[] rom, long loadAddress, String sigPath, Program program, TaskMonitor monitor) throws IOException, InvalidInputException
 	{
-		try
+		Log.info("N64 Loader: Trying to loading signature file as N64sym format");
+		List<String> lines = Files.readAllLines(Paths.get(sigPath));
+		for(String line : lines)
 		{
-			Log.info("N64 Loader: Loading patterns");
-			ArrayList<SigPattern> patterns = new ArrayList<SigPattern>();
-			List<String> lines = Files.readAllLines(Paths.get(sigPath));
-			int maxPatLen = 32;
-			for(String line : lines)
+			String[] parts = line.split(" ");
+			if(parts.length != 2)
+				continue;
+			long address = Long.parseLong(parts[0], 16);
+			String name = parts[1];
+			if(address >= loadAddress)
 			{
-				String[] parts = line.split(" ");
-				if(parts.length != 2)
-					continue;
-				SigPattern pat = new SigPattern(parts[0], parts[1]);
-				if(pat.pattern.length > maxPatLen)
-					maxPatLen = pat.pattern.length;
-				patterns.add(pat);
-			}			
-			Log.info("N64 Loader: Scanning for patterns (" + patterns.size() + ")...");
-			monitor.initialize(rom.length - maxPatLen);
-			monitor.setMessage("Scanning for patterns (" + patterns.size() + ")...");
-			for(int i = 0; i < rom.length - maxPatLen; i += 4)
-			{				
-				if((i % 0x1000) == 0)
-					monitor.setProgress(i);
-				for(int j = 0; j < patterns.size(); j++)
+				SymbolUtilities.createPreferredLabelOrFunctionSymbol(program, MakeAddress(address), null, name, SourceType.ANALYSIS);
+			    Log.info("N64 Loader: Loaded Symbol at " + String.format("0x%08X", address) + " Name=" + name);
+			}
+		}	
+	}
+	
+	public void ScanPatterns(byte[] rom, long loadAddress, String sigPath, Program program, TaskMonitor monitor) throws IOException, InvalidInputException
+	{
+		Log.info("N64 Loader: Trying to loading signature file as default format");
+		ArrayList<SigPattern> patterns = new ArrayList<SigPattern>();
+		List<String> lines = Files.readAllLines(Paths.get(sigPath));
+		int maxPatLen = 32;
+		for(String line : lines)
+		{
+			String[] parts = line.split(" ");
+			if(parts.length != 2)
+				continue;
+			SigPattern pat = new SigPattern(parts[0], parts[1]);
+			if(pat.pattern.length > maxPatLen)
+				maxPatLen = pat.pattern.length;
+			patterns.add(pat);
+		}			
+		Log.info("N64 Loader: Scanning for patterns (" + patterns.size() + ")...");
+		monitor.initialize(rom.length - maxPatLen);
+		monitor.setMessage("Scanning for patterns (" + patterns.size() + ")...");
+		for(int i = 0; i < rom.length - maxPatLen; i += 4)
+		{				
+			if((i % 0x1000) == 0)
+				monitor.setProgress(i);
+			for(int j = 0; j < patterns.size(); j++)
+			{
+				SigPattern sig = patterns.get(j);
+				if(sig.Match(rom, i))
 				{
-					SigPattern sig = patterns.get(j);
-					if(sig.Match(rom, i))
+					long address = loadAddress + i - 0x1000;
+					Address addr = MakeAddress(address);                       
+					if(addr != null)
 					{
-						long address = loadAddress + i - 0x1000;
-						Address addr = MakeAddress(address);                       
-						if(addr != null)
-						{
-						    SymbolUtilities.createPreferredLabelOrFunctionSymbol(program, addr, null, sig.name, SourceType.ANALYSIS);
-						    Log.info("N64 Loader: Found Symbol at " + String.format("0x%08X", address) + " Name=" + sig.name);
-						}
-						break;
+					    SymbolUtilities.createPreferredLabelOrFunctionSymbol(program, addr, null, sig.name, SourceType.ANALYSIS);
+					    Log.info("N64 Loader: Found Symbol at " + String.format("0x%08X", address) + " Name=" + sig.name);
 					}
+					break;
 				}
 			}
-		} catch (IOException | InvalidInputException e) 
-		{
-			Msg.error(this, e);
 		}
 	}
 
