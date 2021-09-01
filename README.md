@@ -23,9 +23,9 @@ requires JDK 13
 ```bash
 brew install java
 brew install gradle
-brew cask install ghidra
+brew install ghidra --cask
 
-export GHIDRA_INSTALL_DIR=`brew cask ls ghidra | grep ghidra | sed 's/^.*-> \(.*\)ghidraRun.*/\1/'`
+export GHIDRA_INSTALL_DIR=`brew ls ghidra --cask | grep ghidra | sed 's/^.*-> \(.*\)ghidraRun.*/\1/'`
 ```
 
 Then whenever you're ready to build, run
