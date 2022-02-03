@@ -213,7 +213,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 				if(addr != null)
 				{
 					program.getSymbolTable().addExternalEntryPoint(addr);
-				    program.getSymbolTable().createLabel(addr, "romMain", SourceType.ANALYSIS);
+				    program.getSymbolTable().createLabel(addr, "ramMain", SourceType.ANALYSIS);
 				}
 				program.getSymbolTable().createLabel(MakeAddress(0xA3f00000L), "RDRAM_CONFIG", SourceType.ANALYSIS);
 				program.getSymbolTable().createLabel(MakeAddress(0xA3f00004L), "RDRAM_DEVICE_ID", SourceType.ANALYSIS);
