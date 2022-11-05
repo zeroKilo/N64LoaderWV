@@ -24,8 +24,8 @@ public class N64Header {
 		try {
 			magic = b.readInt(0);
 			loadAddress = b.readInt(8) & 0xFFFFFFFFL;
-			title = b.readFixedLenAsciiString(0x20, 0x14);
-			gameCode = b.readFixedLenAsciiString(0x3c, 0x2);
+			title = b.readAsciiString(0x20, 0x14);
+			gameCode = b.readAsciiString(0x3c, 0x2);
 			maskRomVersion = b.readByte(0x3F);
 			byte[] bootLoader = b.readByteArray(0x40, 0xFC0);
 			CRC32 crc32 = new CRC32();

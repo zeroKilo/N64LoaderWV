@@ -11,7 +11,7 @@ credits:
 - [blackgamma7](https://github.com/blackgamma7) for fixing memory layout stuff, adding register symbols and various small changes [see merge commit](https://github.com/zeroKilo/N64LoaderWV/commit/46137048775a41f4b54c08cf3c3fab1bcb962219)
 - [dmattia](https://github.com/dmattia) for adding build instructions for mac
 
-requires JDK 13
+requires JDK 17
 
 [![Alt text](https://img.youtube.com/vi/3d3a39LuCwc/0.jpg)](https://www.youtube.com/watch?v=3d3a39LuCwc)
 
