@@ -34,3 +34,17 @@ gradle
 ```
 
 and it will create a zip file in `/dist` that you can use that file as the extension in Ghidra
+
+## Build problem with gradle wrapper
+
+EDIT:2025.04.05
+
+it seems you have to update
+
+```(Ghidra Install Dir)\Ghidra\application.properties```
+
+and upgrade the gradle version like this
+
+```application.gradle.min=8.10```
+
+if you have problems with building from source in eclipse with the gradle wrapper.
