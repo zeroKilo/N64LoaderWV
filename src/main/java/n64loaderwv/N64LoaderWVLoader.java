@@ -21,8 +21,6 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 
-import org.apache.commons.lang3.exception.ExceptionUtils;
-
 import ghidra.app.util.MemoryBlockUtils;
 import ghidra.app.util.Option;
 import ghidra.app.util.bin.BinaryReader;
@@ -31,6 +29,7 @@ import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.opinion.AbstractLibrarySupportLoader;
 import ghidra.app.util.opinion.LoadSpec;
+import ghidra.app.util.opinion.Loader;
 import ghidra.framework.model.DomainObject;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.DataUtilities;
@@ -47,6 +46,9 @@ import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
+	static final int BASE_RDRAM_SIZE = 4 * 1024 * 1024;
+	static final int EXPANDED_RDRAM_SIZE = 8 * 1024 * 1024;
+	static final int INTERRUPT_VECTOR_SIZE = 0x400;
 
 	class BlockInfo {
 		long start, end;
@@ -128,6 +130,17 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	
 	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options, Program program,
 			TaskMonitor monitor, MessageLog log) throws IOException {
+		blocks.clear();
+		try {
+			loadProgram(provider, loadSpec, options, program, monitor, log);
+		} finally {
+			// MemoryBlock instances belong to this Program and must not survive an import.
+			blocks.clear();
+		}
+	}
+
+	private void loadProgram(ByteProvider provider, LoadSpec loadSpec, List<Option> options, Program program,
+			TaskMonitor monitor, MessageLog log) throws IOException {
 		Msg.info(this, "N64 Loader: Checking Endianess");
 		byte[] data;
 		BinaryReader br = new BinaryReader(provider, false);
@@ -150,12 +163,23 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 		ByteArrayProvider bapROM = new ByteArrayProvider(buffROM);
 		Msg.info(this, "N64 Loader: Loading header");
 		N64Header h = new N64Header(buffROM);
+		ByteArrayProvider bapRDRAM = null;
+		if (!((String) options.get(3).getValue()).isEmpty()) {
+			String filePath = (String) options.get(3).getValue();
+			long fileSize = Files.size(Paths.get(filePath));
+			int dumpSize = checkedRdramDumpLength(fileSize);
+			data = Files.readAllBytes(Paths.get(filePath));
+			if (data.length != dumpSize)
+				throw new IOException("RDRAM dump changed while it was being read");
+			bapRDRAM = new ByteArrayProvider(data);
+		}
 
 		for (BlockInfo bli : initSections) {
 			long size = (bli.end + 1) - bli.start;
 			monitor.setMessage("N64 Loader: Creating segment " + bli.name);
 			Msg.info(this, "N64 Loader: Creating segment " + bli.name);
 			ByteArrayProvider bapBlock = new ByteArrayProvider(new byte[(int) size]);
+			boolean borrowedRdram = false;
 			if (bli.desc.equals(".pifrom")) {
 				if (!((String) options.get(2).getValue()).isEmpty()) {
 					String filePath = (String) options.get(2).getValue();
@@ -165,15 +189,15 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 				bapBlock.close();
 				bapBlock = new ByteArrayProvider(data);
 			}
-			if (bli.desc.equals(".ivt") && !((String) options.get(3).getValue()).isEmpty()) {
-				String filePath = (String) options.get(3).getValue();
-				data = Arrays.copyOfRange(Files.readAllBytes(Paths.get(filePath)), 0, 0x400);
+			if (bli.desc.equals(".ivt") && bapRDRAM != null) {
 				bapBlock.close();
-				bapBlock = new ByteArrayProvider(data);
+				bapBlock = bapRDRAM;
+				borrowedRdram = true;
 			}
 			MakeBlock(program, bli.desc, bli.name, bli.start, bapBlock.getInputStream(0), (int) size, "111", null, log,
 					monitor);
-			bapBlock.close();
+			if (!borrowedRdram)
+				bapBlock.close();
 		}
 
 		Msg.info(this, "N64 Loader: Creating segment ROM");
@@ -186,12 +210,10 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 				monitor);
 
 		Msg.info(this, "N64 Loader: Creating segment RAM");
-		if(!((String) options.get(3).getValue()).isEmpty()) {
-			String filePath = (String) options.get(3).getValue();
-			data = Arrays.copyOfRange(Files.readAllBytes(Paths.get(filePath)), 0x400, 0x3F00000);
-			ByteArrayProvider bapRAM = new ByteArrayProvider(data);
-			MakeBlock(program, ".ram", "RAM content", 0x80000400, bapRAM.getInputStream(0), 0x3F00000 - 0x400, "111", null, log, monitor);
-			bapRAM.close();
+		if (bapRDRAM != null) {
+			MakeBlock(program, ".ram", "RAM content", 0x80000400, bapRDRAM.getInputStream(INTERRUPT_VECTOR_SIZE),
+					(int) bapRDRAM.length() - INTERRUPT_VECTOR_SIZE, "111", null, log, monitor);
+			bapRDRAM.close();
 		}
 		else
 			MakeBlock(program, ".ram", "RAM content", h.loadAddress, bapROM.getInputStream(0x1000), buffROM.length - 0x1000, "111", null, log, monitor);
@@ -352,19 +374,29 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	}
 
 	public void MakeBlock(Program program, String name, String desc, long address, InputStream s, int size,
-			String flags, Structure struc, MessageLog log, TaskMonitor monitor) {
+			String flags, Structure struc, MessageLog log, TaskMonitor monitor) throws IOException {
 		try {
 			byte[] bf = flags.getBytes();
 			Address addr = program.getAddressFactory().getDefaultAddressSpace().getAddress(address);
 			MemoryBlock block = MemoryBlockUtils.createInitializedBlock(program, false, name, addr, s, size, desc, null,
 					bf[0] == '1', bf[1] == '1', bf[2] == '1', log, monitor);
+			if (block == null)
+				throw new IOException("block creation was cancelled");
 			blocks.add(block);
 			if (struc != null)
 				DataUtilities.createData(program, block.getStart(), struc, -1, false,
 						ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
 		} catch (Exception e) {
-			Msg.error(this, ExceptionUtils.getStackTrace(e));
+			throw new IOException("N64 Loader: failed to create block " + name, e);
 		}
+	}
+
+	static int checkedRdramDumpLength(long length) throws IOException {
+		if (length != BASE_RDRAM_SIZE && length != EXPANDED_RDRAM_SIZE) {
+			throw new IOException(String.format(
+					"RDRAM dump must be exactly 4 MiB or 8 MiB, got %d bytes", length));
+		}
+		return (int) length;
 	}
 
 	public Address MakeAddress(long address) {
@@ -457,10 +489,14 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	@Override
 	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,	DomainObject domainObject, boolean loadIntoProgram, boolean mirrorFsLayout) {
 		List<Option> list = new ArrayList<Option>();
-		list.add(new Option("Signature file", ""));
-		list.add(new Option("Modem.bin file", ""));
-		list.add(new Option("PIF file", ""));
-		list.add(new Option("RDRAM dump file", ""));
+		list.add(new Option("Signature file", "", String.class,
+				Loader.COMMAND_LINE_ARG_PREFIX + "-signature"));
+		list.add(new Option("Modem.bin file", "", String.class,
+				Loader.COMMAND_LINE_ARG_PREFIX + "-modem"));
+		list.add(new Option("PIF file", "", String.class,
+				Loader.COMMAND_LINE_ARG_PREFIX + "-pif"));
+		list.add(new Option("RDRAM dump file", "", String.class,
+				Loader.COMMAND_LINE_ARG_PREFIX + "-rdram"));
 		return list;
 	}
 

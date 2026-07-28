@@ -31,3 +31,18 @@ else {
 	throw new GradleException("GHIDRA_INSTALL_DIR is not defined!")
 }
 //----------------------END "DO NOT MODIFY" SECTION-------------------------------
+
+sourceSets {
+	verification {
+		compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+		runtimeClasspath += output + compileClasspath
+	}
+}
+
+tasks.register('testRdramDumpSizing', JavaExec) {
+	dependsOn verificationClasses
+	classpath = sourceSets.verification.runtimeClasspath
+	mainClass = 'n64loaderwv.RdramDumpSizingTest'
+}
+
+check.dependsOn testRdramDumpSizing
