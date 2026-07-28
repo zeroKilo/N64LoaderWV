@@ -45,4 +45,11 @@ tasks.register('testRdramDumpSizing', JavaExec) {
 	mainClass = 'n64loaderwv.RdramDumpSizingTest'
 }
 
-check.dependsOn testRdramDumpSizing
+tasks.register('testLoaderIntegration', JavaExec) {
+	dependsOn verificationClasses
+	classpath = sourceSets.verification.runtimeClasspath
+	mainClass = 'n64loaderwv.LoaderIntegrationTest'
+	systemProperty 'ghidra.install.dir', ghidraInstallDir
+}
+
+check.dependsOn testRdramDumpSizing, testLoaderIntegration
