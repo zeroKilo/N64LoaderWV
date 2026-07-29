@@ -33,6 +33,7 @@ Headless imports can pass the same inputs as `-loader-rdram <path>`,
 credits:
 - [blackgamma7](https://github.com/blackgamma7) for fixing memory layout stuff, adding register symbols and various small changes [see merge commit](https://github.com/zeroKilo/N64LoaderWV/commit/46137048775a41f4b54c08cf3c3fab1bcb962219)
 - [dmattia](https://github.com/dmattia) for adding build instructions for mac
+- [jeremyw](https://github.com/jeremyw) for fixing RDRAM handling 
 
 Ghidra 12.1 requires JDK 21. Use the JDK version required by your Ghidra release.
 
