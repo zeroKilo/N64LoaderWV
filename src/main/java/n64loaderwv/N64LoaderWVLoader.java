@@ -527,17 +527,28 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	}
 
 	@Override
-	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,	DomainObject domainObject, boolean loadIntoProgram, boolean mirrorFsLayout) {
-		List<Option> list = new ArrayList<Option>();
-		list.add(new Option("Signature file", "", String.class,
-				Loader.COMMAND_LINE_ARG_PREFIX + "-signature"));
-		list.add(new Option("Modem.bin file", "", String.class,
-				Loader.COMMAND_LINE_ARG_PREFIX + "-modem"));
-		list.add(new Option("PIF file", "", String.class,
-				Loader.COMMAND_LINE_ARG_PREFIX + "-pif"));
-		list.add(new Option("RDRAM dump file", "", String.class,
-				Loader.COMMAND_LINE_ARG_PREFIX + "-rdram"));
-		return list;
+	public List<Option> getDefaultOptions(ByteProvider provider,
+	        LoadSpec loadSpec, DomainObject domainObject,
+	        boolean loadIntoProgram, boolean mirrorFsLayout) {
+	    List<Option> list = new ArrayList<Option>();
+	    list.add(Option.newString("Signature file")
+	            .value("")
+	            .commandLineArgument(Loader.COMMAND_LINE_ARG_PREFIX + "-signature")
+	            .build());
+	    list.add(Option.newString("Modem.bin file")
+	            .value("")
+	            .commandLineArgument(Loader.COMMAND_LINE_ARG_PREFIX + "-modem")
+	            .build());
+	    list.add(Option.newString("PIF file")
+	            .value("")
+	            .commandLineArgument(Loader.COMMAND_LINE_ARG_PREFIX + "-pif")
+	            .build());
+	    list.add(Option.newString("RDRAM dump file")
+	            .value("")
+	            .commandLineArgument(Loader.COMMAND_LINE_ARG_PREFIX + "-rdram")
+	            .build());
+
+	    return list;
 	}
 
 	@Override
