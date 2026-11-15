@@ -1,60 +1,84 @@
-# N64 ROM Loader for Ghidra by Warranty Voider
+# N64 ROM & 64DD Loader for Ghidra by Warranty Voider
 
-this is a loader module for ghidra for N64 roms (.z64, .n64, .v64)
-- fixes endianess (little, big, mixed) at loading
-- loads ram, rom and boot section into ghidra
-- it can use a signature/pattern file to scan for symbol hints for ghidra
+A Ghidra loader extension for Nintendo 64 cartridges and 64DD disk images, supporting disassembly, decompilation and runtime memory analysis.
 
-this allows a rom to be labeled, disassembled and decompiled
+## Features
 
-## Function discovery and runtime-loaded code
+- N64 cartridges (`.z64`, `.n64`, `.v64`) with automatic byte order detection and normalization
+- 64DD disk images (retail and development NDD, D64 and retail MAME formats)
+- N64 memory mapping, hardware register symbols and optional 4 MiB or 8 MiB RDRAM dumps
+- Optional 64DD IPL, PIF and modem ROM loading
+- Cartridge-based 64DD expansion disk support
+- Embedded modem ELF analysis using Ghidra's native ELF parsing and MIPS relocation functionality, with function names, global objects, cross-references and selected SDK prototypes
+- N64sym address/name files and byte-pattern signature files
+- Headless import support
 
-The loader creates the N64 memory map and marks the ROM entry point. Ghidra
-then discovers functions reachable through direct references; importing a ROM
-does not prove every function boundary. Code that the game decompresses,
-relocates, or loads as an overlay is not present at its runtime address in the
-initial ROM-to-RAM image.
+## Usage
 
-For those games, capture an RDRAM dump after the code of interest has been
-loaded and select it with the `RDRAM dump file` loader option. Dumps must be
-exactly 4 MiB (base memory) or 8 MiB (Expansion Pak). The loader maps the
-interrupt vectors at `0x80000000` and the remaining bytes at `0x80000400`
-without padding the dump. A dump represents one runtime moment, so overlays
-that reuse an address may require separate projects or snapshots.
+Install the extension using **File → Install Extensions** in Ghidra, restart Ghidra and import an N64 cartridge or a 64DD disk image.
 
-The `Signature file` option can also consume an N64sym address/name file or a
-byte-pattern file to seed known functions. These inputs are hints for Ghidra;
-they do not establish that every possible function has been found.
+Additional firmware, RDRAM dumps, expansion disks and signature files can be selected in the loader options. Game images and firmware must be supplied separately.
 
-Headless imports can pass the same inputs as `-loader-rdram <path>`,
-`-loader-signature <path>`, `-loader-pif <path>`, and
-`-loader-modem <path>` after selecting `-loader N64LoaderWVLoader`.
+For code loaded or decompressed at runtime, use an RDRAM dump captured after the code of interest has been loaded.
 
-credits:
-- [blackgamma7](https://github.com/blackgamma7) for fixing memory layout stuff, adding register symbols and various small changes [see merge commit](https://github.com/zeroKilo/N64LoaderWV/commit/46137048775a41f4b54c08cf3c3fab1bcb962219)
-- [dmattia](https://github.com/dmattia) for adding build instructions for mac
-- [jeremyw](https://github.com/jeremyw) for fixing RDRAM handling 
+Modem ELF modules are analyzed in separate memory overlays. Their addresses are synthetic analysis addresses, not verified runtime locations. Some external symbols and SDK types remain unresolved.
 
-Ghidra 12.1 requires JDK 21. Use the JDK version required by your Ghidra release.
+Tested with Ghidra 12.2 on Windows, including cartridge, retail NDD, expansion disk and embedded modem analysis. D64, retail MAME and development NDD support still require host regression testing. Physical development MAME images are not supported.
 
-[![Alt text](https://img.youtube.com/vi/3d3a39LuCwc/0.jpg)](https://www.youtube.com/watch?v=3d3a39LuCwc)
+## Build from Source
 
-[![Alt text](https://img.youtube.com/vi/fhI3Vpw7FVk/0.jpg)](https://www.youtube.com/watch?v=fhI3Vpw7FVk)
+### Requirements
 
-## Build from Source (Mac)
+- [Ghidra 12.2](https://github.com/NationalSecurityAgency/ghidra/releases)
+- 64-bit JDK 25
+- Gradle 9.1 or newer (use a version compatible with your Ghidra installation)
 
-```bash
-brew install java
-brew install gradle
-brew cask install ghidra
+Run the following commands from the project directory.
 
-export GHIDRA_INSTALL_DIR=`brew cask ls ghidra | grep ghidra | sed 's/^.*-> \(.*\)ghidraRun.*/\1/'`
-```
+### Windows
 
-Then whenever you're ready to build, run
+In Command Prompt, set the path to your Ghidra installation and build:
 
-```bash
+```cmd
+set "GHIDRA_INSTALL_DIR=C:\path\to\ghidra"
 gradle
 ```
 
-and it will create a zip file in `/dist` that you can use that file as the extension in Ghidra
+### macOS (Homebrew)
+
+Install the dependencies:
+
+```bash
+brew install openjdk@25 gradle ghidra
+```
+
+Configure the environment and build:
+
+```bash
+export JAVA_HOME="$(brew --prefix openjdk@25)/libexec/openjdk.jdk/Contents/Home"
+export GHIDRA_INSTALL_DIR="$(brew --prefix ghidra)/libexec"
+gradle
+```
+
+### Linux
+
+Install the required JDK, Gradle and Ghidra versions, then configure the path and build:
+
+```bash
+export GHIDRA_INSTALL_DIR="/path/to/ghidra"
+gradle
+```
+
+The extension ZIP will be created in the `dist` directory. Install it in the corresponding Ghidra version. The macOS and Linux build instructions have not been tested with this release.
+
+## Credits
+
+- [blackgamma7](https://github.com/blackgamma7) for fixing memory layout stuff, adding register symbols and various small changes ([see merge commit](https://github.com/zeroKilo/N64LoaderWV/commit/46137048775a41f4b54c08cf3c3fab1bcb962219))
+- [dmattia](https://github.com/dmattia) for adding build instructions for Mac
+- [jeremyw](https://github.com/jeremyw) for fixing RDRAM handling
+
+## Videos
+
+[![Video 1](https://img.youtube.com/vi/3d3a39LuCwc/0.jpg)](https://www.youtube.com/watch?v=3d3a39LuCwc)
+
+[![Video 2](https://img.youtube.com/vi/fhI3Vpw7FVk/0.jpg)](https://www.youtube.com/watch?v=fhI3Vpw7FVk)

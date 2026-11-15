@@ -48,6 +48,7 @@ import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
+
 	static final int BASE_RDRAM_SIZE = 4 * 1024 * 1024;
 	static final int EXPANDED_RDRAM_SIZE = 8 * 1024 * 1024;
 	static final int INTERRUPT_VECTOR_SIZE = 0x400;
@@ -90,30 +91,11 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 		}
 	}
 
-	ArrayList<BlockInfo> initSections = new ArrayList<N64LoaderWVLoader.BlockInfo>() {
-		{			
-			add(new BlockInfo(0xA3F00000, 0xA3F00027, "RDRAM Registers", ".rdreg"));
-			add(new BlockInfo(0xa4040000, 0xa404001f, "SP Registers", ".spreg"));
-			add(new BlockInfo(0xa4080000, 0xa4080003, "SP_PC_Reg", ".spcreg"));
-			add(new BlockInfo(0xA4100000, 0xA410001F, "DP Command Registers", ".dpcreg"));
-			add(new BlockInfo(0xA4200000, 0xa420000F, "DP Span Registers", ".dpsreg"));
-			add(new BlockInfo(0xa4300000, 0xa430000F, "MIPS Interface (MI) Registers", ".mireg"));
-			add(new BlockInfo(0xa4400000, 0xa4400037, "Video Interface (VI) Registers", ".vireg"));
-			add(new BlockInfo(0xa4500000, 0xa4500017, "Audio Interface (AI) Registers", ".aireg"));
-			add(new BlockInfo(0xa4600000, 0xa4600034, "Peripheral Interface (PI) Registers", ".pireg"));
-			add(new BlockInfo(0xa4700000, 0xa470001F, "RDRAM Interface (RI) Registers", ".rireg"));
-			add(new BlockInfo(0xa4800000, 0xa480001b, "Serial Interface (SI) Registers", ".sireg"));
-			add(new BlockInfo(0xa5000500, 0xa500054b, "N64 Disk Drive (DD) Registers", ".ddreg"));
-			add(new BlockInfo(0x1FC00000, 0x1FC007BF, "PIF Boot ROM", ".pifrom"));
-			add(new BlockInfo(0x1FC007C0, 0x1FC007FF, "PIF RAM", ".pifram"));
-			add(new BlockInfo(0x80000000, 0x800003FF, "Interrupt Vector Table", ".ivt"));
-		}
-	};
-	
+	List<BlockInfo> initSections = List.of(new BlockInfo(0x80000000L, 0x800003FFL, "Interrupt Vector Table", ".ivt"));
+
 	public N64LoaderWVLoader() {
 		Msg.info(this, "N64 Loader: Loaded class");
 	}
-	
 
 	@Override
 	public String getName() {
@@ -146,15 +128,17 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 			break;
 		}
 		if (valid)
-			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("MIPS:BE:64:64-32addr", "o32"), true));
+			loadSpecs.add(new LoadSpec(this, N64Memory.KSEG0,
+					new LanguageCompilerSpecPair("MIPS:BE:64:64-32addr", "o32"), true));
 		return loadSpecs;
 	}
 
 	@Override
 	protected void load(Program program, ImporterSettings settings) throws CancelledException, IOException {
-		this.load(settings.provider(), settings.loadSpec(), settings.options(), program, settings.monitor(), settings.log());		
-	}	
-	
+		this.load(settings.provider(), settings.loadSpec(), settings.options(), program, settings.monitor(),
+				settings.log());
+	}
+
 	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options, Program program,
 			TaskMonitor monitor, MessageLog log) throws IOException, CancelledException {
 		loadProgram(provider, loadSpec, options, program, monitor, log);
@@ -164,7 +148,6 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 			TaskMonitor monitor, MessageLog log) throws IOException, CancelledException {
 		ImportContext context = new ImportContext(program);
 		Msg.info(this, "N64 Loader: Checking Endianess");
-		byte[] data;
 		BinaryReader br = new BinaryReader(provider, false);
 		int header = br.readInt(0);
 		byte[] buffROM = provider.getInputStream(0).readAllBytes();
@@ -181,221 +164,114 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 			LittleSwap(buffROM);
 			break;
 		}
-
-		ByteArrayProvider bapROM = new ByteArrayProvider(buffROM);
 		Msg.info(this, "N64 Loader: Loading header");
 		N64Header h = new N64Header(buffROM);
-		ByteArrayProvider bapRDRAM = null;
-		if (!((String) options.get(3).getValue()).isEmpty()) {
-			Path filePath = Paths.get((String) options.get(3).getValue());
-			data = readRdramDump(filePath);
-			bapRDRAM = new ByteArrayProvider(data);
-		}
-
-		for (BlockInfo bli : initSections) {
-			long size = (bli.end + 1) - bli.start;
-			monitor.setMessage("N64 Loader: Creating segment " + bli.name);
-			Msg.info(this, "N64 Loader: Creating segment " + bli.name);
-			ByteArrayProvider bapBlock = new ByteArrayProvider(new byte[(int) size]);
-			boolean borrowedRdram = false;
-			if (bli.desc.equals(".pifrom")) {
-				if (!((String) options.get(2).getValue()).isEmpty()) {
-					String filePath = (String) options.get(2).getValue();
-					data = Files.readAllBytes(Paths.get(filePath));
-				} else
-					data = this.getClass().getClassLoader().getResourceAsStream("pifdata.bin").readAllBytes();
-				bapBlock.close();
-				bapBlock = new ByteArrayProvider(data);
+		String rdramPath = getStringOption(options, "RDRAM dump file");
+		try (ByteArrayProvider bapROM = new ByteArrayProvider(buffROM);
+				ByteArrayProvider bapRDRAM = rdramPath.isEmpty() ? null
+						: new ByteArrayProvider(readRdramDump(Paths.get(rdramPath)))) {
+			N64Memory.BootRange bootRange = null;
+			if (bapRDRAM == null) {
+				bootRange = N64Memory.getCartridgeBootRange(buffROM, h.loadAddress);
+				log.appendMsg(String.format("IPL3 CRC32: %08X", bootRange.ipl3CRC()));
 			}
-			if (bli.desc.equals(".ivt") && bapRDRAM != null) {
-				bapBlock.close();
-				bapBlock = bapRDRAM;
-				borrowedRdram = true;
-			}
-			MakeBlock(context, program, bli.desc, bli.name, bli.start, bapBlock.getInputStream(0), (int) size, "111",
-					null, log, monitor);
-			if (!borrowedRdram)
-				bapBlock.close();
-		}
+			long ramEntry = bootRange != null ? bootRange.loadAddress() : h.loadAddress;
+			for (BlockInfo bli : initSections) {
+				long size = (bli.end + 1) - bli.start;
+				monitor.setMessage("N64 Loader: Creating segment " + bli.name);
+				Msg.info(this, "N64 Loader: Creating segment " + bli.name);
+				if (bootRange != null && bli.desc.equals(".ivt")) {
+					try {
+						MemoryBlock ivt = program.getMemory().createUninitializedBlock(".ivt",
+								context.defaultAddress(0x80000000L), INTERRUPT_VECTOR_SIZE, false);
+						ivt.setRead(true);
+						ivt.setWrite(true);
+						ivt.setExecute(true);
+						ivt.setComment("Interrupt vectors and boot parameters; " + "contents not reconstructed");
+						context.add(ivt);
 
-		Msg.info(this, "N64 Loader: Creating segment ROM");
-		Structure header_struct = N64Header.getDataStructure();
-		MakeBlock(context, program, ".rom", "ROM image", 0xB0000000, bapROM.getInputStream(0),
-				(int) bapROM.length(), "100", header_struct, log, monitor);
-
-		Msg.info(this, "N64 Loader: Creating segment BOOT");
-		MakeBlock(context, program, ".boot", "ROM bootloader", 0xA4000040, bapROM.getInputStream(0x40), 0xFC0,
-				"111", null, log, monitor);
-
-		Msg.info(this, "N64 Loader: Creating segment RAM");
-		if (bapRDRAM != null) {
-			MakeBlock(context, program, ".ram", "RAM content", 0x80000400,
-					bapRDRAM.getInputStream(INTERRUPT_VECTOR_SIZE),
-					rdramRamLength((int) bapRDRAM.length()), "111", null, log, monitor);
-			bapRDRAM.close();
-		}
-		else
-			MakeBlock(context, program, ".ram", "RAM content", h.loadAddress, bapROM.getInputStream(0x1000),
-					buffROM.length - 0x1000, "111", null, log, monitor);
-
-		bapROM.close();
-
-		if (!((String) options.get(0).getValue()).isEmpty()) {
-			String filePath = (String) options.get(0).getValue();
-			boolean done = false;
-			try {
-				ScanPatterns(context, buffROM, h.loadAddress, filePath, program, monitor);
-				done = true;
-			} catch (Exception ex) {
-			}
-			if (!done) {
-				try {
-					ApplyN64sym(context, buffROM, h.loadAddress, filePath, program, monitor);
-					done = true;
-				} catch (Exception ex) {
+					} catch (Exception ex) {
+						throw new IOException("Could not create interrupt vector block", ex);
+					}
+					continue;
 				}
+				ByteArrayProvider bapBlock = new ByteArrayProvider(new byte[(int) size]);
+				boolean borrowedRdram = false;
+				if (bli.desc.equals(".ivt") && bapRDRAM != null) {
+					bapBlock.close();
+					bapBlock = bapRDRAM;
+					borrowedRdram = true;
+				}
+				MakeBlock(context, program, bli.desc, bli.name, bli.start, bapBlock.getInputStream(0), (int) size,
+						"111", null, log, monitor);
+				if (!borrowedRdram)
+					bapBlock.close();
 			}
+			MemoryBlock pif = N64Firmware.loadPif(program, getStringOption(options, "PIF file"), log, monitor);
+			if (pif != null)
+				context.add(pif);
+			Msg.info(this, "N64 Loader: Creating segment ROM");
+			Structure header_struct = N64Header.getDataStructure();
+			MakeBlock(context, program, ".rom", "ROM image", 0xB0000000, bapROM.getInputStream(0),
+					(int) bapROM.length(), "100", header_struct, log, monitor);
+			MakeBlock(context, program, ".bootheader", "ROM header copied into SP DMEM", 0xA4000000L,
+					bapROM.getInputStream(0), 0x40, "110", header_struct, log, monitor);
+			Msg.info(this, "N64 Loader: Creating segment BOOT");
+			MakeBlock(context, program, ".boot", "ROM bootloader", 0xA4000040, bapROM.getInputStream(0x40), 0xFC0,
+					"111", null, log, monitor);
+			Msg.info(this, "N64 Loader: Creating segment RAM");
+			if (bapRDRAM != null) {
+				MakeBlock(context, program, ".ram", "Captured RDRAM content", 0x80000400L,
+						bapRDRAM.getInputStream(INTERRUPT_VECTOR_SIZE), rdramRamLength((int) bapRDRAM.length()), "111",
+						null, log, monitor);
+			} else {
+				MakeBlock(context, program, ".ram", "IPL3-loaded RDRAM content", bootRange.loadAddress(),
+						bapROM.getInputStream(0x1000), bootRange.byteCount(), "111", null, log, monitor);
+				log.appendMsg(String.format("Reconstructed IPL3 transfer: " + "0x%X bytes at 0x%08X",
+						bootRange.byteCount(), bootRange.loadAddress()));
+			}
+			try {
+				N64Hardware.addHardware(program, true);
+				for (MemoryBlock block : program.getMemory().getBlocks()) {
+					if (!context.blocks.contains(block))
+						context.add(block);
+				}
+			} catch (Exception ex) {
+				throw new IOException("Failed to map N64 hardware", ex);
+			}
+			N64Firmware.loadModem(program, getStringOption(options, "Modem.bin file"), log, monitor);
+			try {
+				Address addr = MakeAddress(context, 0xBFC00000L);
+				if (addr != null) {
+					program.getSymbolTable().addExternalEntryPoint(addr);
+					program.getSymbolTable().createLabel(addr, "pifMain", SourceType.ANALYSIS);
+				}
+				addr = MakeAddress(context, 0xA4000040L);
+				if (addr != null) {
+					program.getSymbolTable().addExternalEntryPoint(addr);
+					program.getSymbolTable().createLabel(addr, "bootMain", SourceType.ANALYSIS);
+				}
+				addr = MakeAddress(context, ramEntry);
+				if (addr != null) {
+					program.getSymbolTable().addExternalEntryPoint(addr);
+					program.getSymbolTable().createLabel(addr, "ramMain", SourceType.ANALYSIS);
+				}
+			} catch (Exception ex) {
+			    log.appendMsg("Failed to register N64 entry points");
+			    log.appendException(ex);
+			}
+			if (N64Memory.isEnabled(options, N64Memory.OPTION_ALIASES)) {
+				N64Memory.addRdramAliases(program, log);
+			}
+			N64DDMedia.loadIpl(program, getStringOption(options, N64DDMedia.OPTION_IPL), log, monitor);
+			N64DDMedia.loadExpansionDisk(program, getStringOption(options, N64DDMedia.OPTION_DISK), log, monitor);
+			N64Symbols.apply(program, (String) options.get(0).getValue(), log, monitor);
+			Msg.info(this, "N64 Loader: Done Loading");
 		}
-		if (!((String) options.get(1).getValue()).isEmpty()) {
-			Msg.info(this, "N64 Loader: Loading modem ROM image");
-			String filePath = (String) options.get(1).getValue();
-			byte[] modem_rom = Files.readAllBytes(Paths.get(filePath));
-			ByteArrayProvider bapModemROM = new ByteArrayProvider(modem_rom);
-			MakeBlock(context, program, ".modem", "Modem ROM image", 0xB8000000, bapModemROM.getInputStream(0),
-					modem_rom.length, "100", null, log, monitor);
-			bapModemROM.close();
-		}
-		try {
-			Address addr = MakeAddress(context, 0x1FC00000L);
-			if (addr != null) {
-				program.getSymbolTable().addExternalEntryPoint(addr);
-				program.getSymbolTable().createLabel(addr, "pifMain", SourceType.ANALYSIS);
-			}
-			addr = MakeAddress(context, 0xA4000040L);
-			if (addr != null) {
-				program.getSymbolTable().addExternalEntryPoint(addr);
-				program.getSymbolTable().createLabel(addr, "bootMain", SourceType.ANALYSIS);
-			}
-			addr = MakeAddress(context, h.loadAddress);
-			if (addr != null) {
-				program.getSymbolTable().addExternalEntryPoint(addr);
-				program.getSymbolTable().createLabel(addr, "ramMain", SourceType.ANALYSIS);
-			}
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA3f00000L), "RDRAM_CONFIG", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA3f00004L), "RDRAM_DEVICE_ID", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA3f00008L), "RDRAM_DELAY", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA3f0000CL), "RDRAM_MODE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA3f00010L), "RDRAM_REF_INTERVAL", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA3f00014L), "RDRAM_REF_ROW", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA3f00018L), "RDRAM_RAS_INTERVAL", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA3f0001CL), "RDRAM_MIN_INTERVAL", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA3f00020L), "RDRAM_ADDR_SELECT", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA3f00024L), "RDRAM_DEVICE_MANUF", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4040000L), "SP_MEM_ADDR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4040004L), "SP_DRAM_ADDR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4040008L), "SP_RD_LEN", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA404000CL), "SP_WR_LEN", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4040010L), "SP_STATUS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4040014L), "SP_DMA_FULL", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4040018L), "SP_DMA_BUSY", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA404001CL), "SP_SEMAPHORE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4080000L), "SP_PC", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4100000L), "DCP_START", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4100004L), "DCP_END", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4100008L), "DCP_CURRENT", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA410000cL), "DCP_STATUS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4100010L), "DCP_CLOCK", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4100014L), "DCP_BUFBUSY", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4100018L), "DCP_PIPEBUSY", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA410001cL), "DCP_START", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4300000L), "MI_INIT_MODE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4300004L), "MI_VERSION", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4300008L), "MI_INTR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA430000CL), "MI_INTR_MASK", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400000L), "VI_STATUS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400004L), "VI_ORIGIN", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400008L), "VI_WIDTH", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA440000CL), "VI_INTR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400010L), "VI_CURRENT", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400014L), "VI_BURST", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400018L), "VI_V_SYNC", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA440001CL), "VI_H_SYNC", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400020L), "VI_LEAP", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400024L), "VI_H_START", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400028L), "VI_V_START", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA440002CL), "VI_V_BURST", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400030L), "VI_X_SCALE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4400034L), "VI_Y_SCALE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4500000L), "AI_DRAM_ADDR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4500004L), "AI_LEN", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4500008L), "AI_CONTROL", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA450000CL), "AI_STATUS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4500010L), "AI_DACRATE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4500014L), "AI_BITRATE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4600000L), "PI_DRAM_ADDR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4600004L), "PI_CART_ADDR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4600008L), "PI_RD_LEN", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA460000CL), "PI_WR_LEN", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4600010L), "PI_STATUS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4600014L), "PI_BSD_DOM1_LAT", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4600018L), "PI_BSD_DOM1_PWD", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA460001CL), "PI_BSD_DOM1_PGS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4600020L), "PI_BSD_DOM1_RLS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4600024L), "PI_BSD_DOM2_LAT", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4600028L), "PI_BSD_DOM2_PWD", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA460002CL), "PI_BSD_DOM2_PGS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4600030L), "PI_BSD_DOM2_RLS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4700000L), "RI_MODE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4700004L), "RI_CONFIG", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4700008L), "RI_CURRENT_LOAD", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA470000CL), "RI_SELECT", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4700010L), "RI_REFRESH", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4700014L), "RI_LATENCY", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4700018L), "RI_RERROR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA470001CL), "RI_WERROR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4800000L), "SI_DRAM_ADDR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4800004L), "SI_PIF_ADDR_RD64B_REG", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4800010L), "SI_PIF_ADDR_WR64B_REG", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA4800018L), "SI_STATUS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000500L), "ASIC_DATA", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000504L), "ASIC_MISC_REG", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000508L), "ASIC_STATUS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA500050CL), "ASIC_CUR_TK", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000510L), "ASIC_BM_STATUS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000514L), "ASIC_ERR_SECTOR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000518L), "ASIC_SEQ_STATUS", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA500051CL), "ASIC_CUR_SECTOR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000520L), "ASIC_HARD_RESET", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000524L), "ASIC_C1_SO", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000528L), "ASIC_HOST_SECBYTE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA500052CL), "ASIC_C1_S2", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000530L), "ASIC_SEC_BYTE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000534L), "ASIC_C1_S4", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000538L), "ASIC_C1_S6", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA500053CL), "ASIC_CUR_ADDR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000540L), "ASIC_ID_REG", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000544L), "ASIC_TEST_REG", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0xA5000548L), "ASIC_TEST_PIN_SEL", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x80000000L), "TLB_REFILL", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x80000080L), "XTLB_REFILL", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x80000100L), "CACHE_ERROR", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x80000180L), "GEN_EXCEPTION", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x80000300L), "NTSC_PAL", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x80000304L), "CART_DD", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x80000308L), "ROM_BASE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x8000030cL), "RESET", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x80000310L), "CIC_ID", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x80000314L), "VERSION", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x80000318L), "RDRAM_SIZE", SourceType.ANALYSIS);
-			program.getSymbolTable().createLabel(MakeAddress(context, 0x8000031cL), "NMI_BUFFER", SourceType.ANALYSIS);
-		} catch (Exception ex) {
-		}
-
-		Msg.info(this, "N64 Loader: Done Loading");
 	}
 
-	public void MakeBlock(ImportContext context, Program program, String name, String desc, long address, InputStream s, int size,
-			String flags, Structure struc, MessageLog log, TaskMonitor monitor)
+	public void MakeBlock(ImportContext context, Program program, String name, String desc, long address, InputStream s,
+			int size, String flags, Structure struc, MessageLog log, TaskMonitor monitor)
 			throws IOException, CancelledException {
 		try {
 			byte[] bf = flags.getBytes();
@@ -419,8 +295,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 
 	static int checkedRdramDumpLength(long length) throws IOException {
 		if (length != BASE_RDRAM_SIZE && length != EXPANDED_RDRAM_SIZE) {
-			throw new IOException(String.format(
-					"RDRAM dump must be exactly 4 MiB or 8 MiB, got %d bytes", length));
+			throw new IOException(String.format("RDRAM dump must be exactly 4 MiB or 8 MiB, got %d bytes", length));
 		}
 		return (int) length;
 	}
@@ -442,8 +317,6 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	}
 
 	public Address MakeAddress(Program program, long address) {
-		// Loader instances may serve overlapping imports: import A must not clear or
-		// populate address state used while import B resolves symbols.
 		Address result = program.getAddressFactory().getDefaultAddressSpace().getAddress(address);
 		return program.getMemory().getBlock(result) == null ? null : result;
 	}
@@ -469,8 +342,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	}
 
 	public void ApplyN64sym(ImportContext context, byte[] rom, long loadAddress, String sigPath, Program program,
-			TaskMonitor monitor)
-			throws IOException, InvalidInputException {
+			TaskMonitor monitor) throws IOException, InvalidInputException {
 		Msg.info(this, "N64 Loader: Trying to loading signature file as N64sym format");
 		List<String> lines = Files.readAllLines(Paths.get(sigPath));
 		for (String line : lines) {
@@ -488,8 +360,7 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	}
 
 	public void ScanPatterns(ImportContext context, byte[] rom, long loadAddress, String sigPath, Program program,
-			TaskMonitor monitor)
-			throws IOException, InvalidInputException {
+			TaskMonitor monitor) throws IOException, InvalidInputException {
 		Msg.info(this, "N64 Loader: Trying to loading signature file as default format");
 		ArrayList<SigPattern> patterns = new ArrayList<SigPattern>();
 		List<String> lines = Files.readAllLines(Paths.get(sigPath));
@@ -527,28 +398,25 @@ public class N64LoaderWVLoader extends AbstractLibrarySupportLoader {
 	}
 
 	@Override
-	public List<Option> getDefaultOptions(ByteProvider provider,
-	        LoadSpec loadSpec, DomainObject domainObject,
-	        boolean loadIntoProgram, boolean mirrorFsLayout) {
-	    List<Option> list = new ArrayList<Option>();
-	    list.add(Option.newString("Signature file")
-	            .value("")
-	            .commandLineArgument(Loader.COMMAND_LINE_ARG_PREFIX + "-signature")
-	            .build());
-	    list.add(Option.newString("Modem.bin file")
-	            .value("")
-	            .commandLineArgument(Loader.COMMAND_LINE_ARG_PREFIX + "-modem")
-	            .build());
-	    list.add(Option.newString("PIF file")
-	            .value("")
-	            .commandLineArgument(Loader.COMMAND_LINE_ARG_PREFIX + "-pif")
-	            .build());
-	    list.add(Option.newString("RDRAM dump file")
-	            .value("")
-	            .commandLineArgument(Loader.COMMAND_LINE_ARG_PREFIX + "-rdram")
-	            .build());
+	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec, DomainObject domainObject,
+			boolean loadIntoProgram, boolean mirrorFsLayout) {
+		List<Option> list = new ArrayList<>();
+		list.add(new FileOption("Signature file", "", Loader.COMMAND_LINE_ARG_PREFIX + "-signature"));
+		list.add(new FileOption("Modem.bin file", "", Loader.COMMAND_LINE_ARG_PREFIX + "-modem"));
+		list.add(new FileOption("PIF file", "", Loader.COMMAND_LINE_ARG_PREFIX + "-pif"));
+		list.add(new FileOption("RDRAM dump file", "", Loader.COMMAND_LINE_ARG_PREFIX + "-rdram"));
+		list.add(new FileOption(N64DDMedia.OPTION_IPL, "", Loader.COMMAND_LINE_ARG_PREFIX + "-ipl"));
+		list.add(new FileOption(N64DDMedia.OPTION_DISK, "", Loader.COMMAND_LINE_ARG_PREFIX + "-disk"));
+		list.add(N64Memory.aliasOption());
+		return list;
+	}
 
-	    return list;
+	private String getStringOption(List<Option> options, String name) {
+		for (Option option : options) {
+			if (name.equals(option.getName()) && option.getValue() instanceof String value)
+				return value.trim();
+		}
+		return "";
 	}
 
 	@Override

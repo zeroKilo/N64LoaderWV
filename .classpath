@@ -582,6 +582,11 @@
 			<attribute name="javadoc_location" value="jar:file:/C:\Users\wv\Desktop\ghidra_12.2_PUBLIC\docs\GhidraAPI_javadoc.zip!/api/"/>
 		</attributes>
 	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/wv/AppData/Roaming/ghidra/ghidra_12.2_PUBLIC/Extensions/N64LoaderWV/lib/N64LoaderWV.jar" sourcepath="C:/Users/wv/AppData/Roaming/ghidra/ghidra_12.2_PUBLIC/Extensions/N64LoaderWV/lib/N64LoaderWV-src.zip">
+		<attributes>
+			<attribute name="javadoc_location" value="jar:file:/C:\Users\wv\Desktop\ghidra_12.2_PUBLIC\docs\GhidraAPI_javadoc.zip!/api/"/>
+		</attributes>
+	</classpathentry>
 	<classpathentry kind="lib" path="C:/Users/wv/Desktop/ghidra_12.2_PUBLIC/Ghidra/Processors/NDS32/lib/NDS32.jar" sourcepath="C:/Users/wv/Desktop/ghidra_12.2_PUBLIC/Ghidra/Processors/NDS32/lib/NDS32-src.zip">
 		<attributes>
 			<attribute name="javadoc_location" value="jar:file:/C:\Users\wv\Desktop\ghidra_12.2_PUBLIC\docs\GhidraAPI_javadoc.zip!/api/"/>
