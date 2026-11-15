@@ -82,3 +82,6 @@ The extension ZIP will be created in the `dist` directory. Install it in the cor
 [![Video 1](https://img.youtube.com/vi/3d3a39LuCwc/0.jpg)](https://www.youtube.com/watch?v=3d3a39LuCwc)
 
 [![Video 2](https://img.youtube.com/vi/fhI3Vpw7FVk/0.jpg)](https://www.youtube.com/watch?v=fhI3Vpw7FVk)
+
+<img width="1920" height="982" alt="image" src="https://github.com/user-attachments/assets/a5f64088-d342-455f-ae95-7b0fe9e63b65" />
+
